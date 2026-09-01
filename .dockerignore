@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+outputs/
+work/
+Interview test 20251011.pdf
