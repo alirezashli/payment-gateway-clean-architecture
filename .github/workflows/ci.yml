@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -38,9 +38,18 @@ jobs:
           set -euo pipefail
           for url in http://localhost:5001/health http://localhost:5002/health; do
             echo "Waiting for $url"
-            curl --fail --silent --show-error \
-              --retry 30 --retry-delay 2 --retry-connrefused \
-              "$url"
+            ready=false
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error "$url"; then
+                ready=true
+                break
+              fi
+              sleep 2
+            done
+            if [[ "$ready" != "true" ]]; then
+              echo "API did not become ready: $url" >&2
+              exit 1
+            fi
           done
 
       - name: Run end-to-end payment test
