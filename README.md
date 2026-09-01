@@ -1,5 +1,7 @@
 # Sample Payment Gateway
 
+[![CI](https://github.com/alirezashli/payment-gateway-clean-architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/alirezashli/payment-gateway-clean-architecture/actions/workflows/ci.yml)
+
 نسخه‌ای مینیمال از تمرین درگاه پرداخت، با دو سرویس مستقل و ساختار Clean Architecture مبتنی بر الگوی Core/Infrastructure/Web.
 
 ## معماری

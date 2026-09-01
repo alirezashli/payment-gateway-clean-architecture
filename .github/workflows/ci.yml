@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore PaymentGateway.sln
+
+      - name: Build
+        run: dotnet build PaymentGateway.sln --configuration Release --no-restore
+
+      - name: Build and start Docker stack
+        run: docker compose up -d --build
+
+      - name: Wait for APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in http://localhost:5001/health http://localhost:5002/health; do
+            echo "Waiting for $url"
+            curl --fail --silent --show-error \
+              --retry 30 --retry-delay 2 --retry-connrefused \
+              "$url"
+          done
+
+      - name: Run end-to-end payment test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          token_response=$(curl --fail --silent --show-error \
+            -X POST http://localhost:5001/api/payment/get-token \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "terminalNo": "123",
+              "amount": 10000,
+              "redirectUrl": "https://example.com/github-actions",
+              "reservationNumber": "GITHUB-ACTIONS-E2E",
+              "phoneNumber": "09123456789"
+            }')
+
+          token=$(echo "$token_response" | jq -r '.token')
+          gateway_url=$(echo "$token_response" | jq -r '.gatewayUrl')
+          test -n "$token"
+          test "$token" != "null"
+
+          payment_response=$(curl --fail --silent --show-error "$gateway_url")
+          echo "$payment_response" | jq -e --arg token "$token" \
+            '.token == $token and (.isSuccess | type == "boolean")'
+
+          for attempt in {1..15}; do
+            if docker compose logs notification-worker | grep -q "$token"; then
+              echo "RabbitMQ event consumed for token $token"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Notification worker did not consume event for token $token" >&2
+          exit 1
+
+      - name: Show container status
+        if: always()
+        run: docker compose ps
+
+      - name: Collect Docker logs
+        if: always()
+        run: docker compose logs --no-color
+
+      - name: Stop Docker stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
